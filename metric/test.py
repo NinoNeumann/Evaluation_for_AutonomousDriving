@@ -80,7 +80,7 @@ def compute_ADE_L2pers_L2AVG(preds, gts):
     """
     Compute ADE, cumulative L2 per second, average L2, and average L2 for first 3 seconds.
     
-    Args:
+    Args
         preds: list of predicted trajectories
         gts: list of ground truth trajectories
     
