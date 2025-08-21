@@ -1,10 +1,16 @@
 from tools.FDE import *
 from tools.ADE_L2 import *
 from tools.file_utils import read_json_from_directory, write_json
+import argparse
 
 if __name__ == "__main__":
-    json_dir_root = ""
-    res_save_json_path = ""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json_dir_root", type=str, default="output/jsons")
+    parser.add_argument("--res_save_json_path", type=str, default="output/results.json")
+    args = parser.parse_args()
+
+    json_dir_root = args.json_dir_root
+    res_save_json_path = args.res_save_json_path
 
     
     all_cases_metrics = []
