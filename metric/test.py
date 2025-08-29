@@ -1,37 +1,43 @@
 import math
 import numpy as np
 from typing import List, Tuple
+import numpy as np
 
-def compute_L2_persecond_RSS(preds, gts, reduce='mean', secs=(1, 2, 3, 4), hz=2):
+def stp3_l2_persecond(preds, gts, secs=(1, 2, 3), hz=2, reduction='mean'):
     """
-    L2(RSS)@k秒 = sqrt( sum_{t<=k*hz} ||p_t - g_t||_2^2 )
-    preds, gts: 形状 (N, T, 2)
-    reduce: 'mean' | 'sum' | 'none'（返回每条轨迹）
-    secs: 需要统计的秒数元组
-    hz: 每秒采样点数（默认 2 -> 0.5s 间隔）
+    ST-P3 风格的 L2@k秒：
+      对前 (k*hz) 个点的欧氏距离先在时间维取平均，再按样本做 reduce。
+    参数:
+      preds, gts: (N, T, 2)  预测/GT 轨迹（单位: 米）
+      secs: 统计的秒数
+      hz: 采样频率 (默认 2Hz -> 0.5s 一点)
+      reduction: 'mean' | 'sum' | 'none'
+    返回:
+      [L2@1s, L2@2s, L2@3s]（或按 secs 决定）
     """
     preds = np.asarray(preds, dtype=np.float32)
     gts   = np.asarray(gts,   dtype=np.float32)
-    if preds.shape != gts.shape or preds.ndim != 3 or preds.shape[2] != 2:
-        raise ValueError(f"输入形状应一致且为 (N, T, 2)，得到 {preds.shape} vs {gts.shape}")
+    if preds.shape != gts.shape or preds.ndim != 3 or preds.shape[-1] != 2:
+        raise ValueError(f"expect (N,T,2), got {preds.shape} and {gts.shape}")
 
-    N, T, _ = preds.shape
+    # (N, T): 每步欧氏距离
+    d = np.linalg.norm(preds - gts, axis=2)
+    N, T = d.shape
     out = []
-    for k in secs:
-        p_len = min(k * hz, T)
-        diff = preds[:, :p_len, :] - gts[:, :p_len, :]      # (N, p_len, 2)
-        e2   = np.sum(diff**2, axis=2)                      # (N, p_len)
-        rss_per_traj = np.sqrt(np.sum(e2, axis=1))          # (N,)
-
-        if reduce == 'mean':
-            out.append(float(rss_per_traj.mean()))
-        elif reduce == 'sum':
-            out.append(float(rss_per_traj.sum()))
-        elif reduce == 'none':
-            out.append(rss_per_traj)                        # 返回 (N,)
+    for s in secs:
+        p = min(s * hz, T)
+        per_traj = d[:, :p].mean(axis=1)  # 先对时间平均
+        if reduction == 'mean':
+            out.append(float(per_traj.mean()))   # 再对样本平均
+        elif reduction == 'sum':
+            out.append(float(per_traj.sum()))
+        elif reduction == 'none':
+            out.append(per_traj)                 # 返回 (N,)
         else:
-            raise ValueError("reduce 必须是 'mean' | 'sum' | 'none'")
+            raise ValueError("reduction must be 'mean'|'sum'|'none'")
     return out
+
+
 
 def compute_ADE(preds, gts):
     """
