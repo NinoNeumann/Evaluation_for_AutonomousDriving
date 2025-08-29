@@ -2,41 +2,36 @@ import math
 import numpy as np
 from typing import List, Tuple
 
-def compute_L2_persecond(preds, gts):
+def compute_L2_persecond_RSS(preds, gts, reduce='mean', secs=(1, 2, 3, 4), hz=2):
     """
-    Compute cumulative L2 distance per second for trajectories.
-    
-    每秒累积欧氏距离：
-    - 1s: 前 2 个点
-    - 2s: 前 4 个点
-    - 3s: 前 6 个点
-    - 4s: 前 8 个点
-    
-    Args:
-        preds: list of predicted trajectories, shape (N, 8, 2)
-        gts: list of ground truth trajectories, shape (N, 8, 2)
-    
-    Returns:
-        L2_list: list of cumulative L2 distances for each second [L2_1s, L2_2s, L2_3s, L2_4s]
+    L2(RSS)@k秒 = sqrt( sum_{t<=k*hz} ||p_t - g_t||_2^2 )
+    preds, gts: 形状 (N, T, 2)
+    reduce: 'mean' | 'sum' | 'none'（返回每条轨迹）
+    secs: 需要统计的秒数元组
+    hz: 每秒采样点数（默认 2 -> 0.5s 间隔）
     """
-    # 转为 NumPy 数组，方便向量化计算
-    preds = np.array(preds, dtype=np.float32)  # shape (N, 8, 2)
-    gts = np.array(gts, dtype=np.float32)      # shape (N, 8, 2)
-    
-    cum_points = [2, 4, 6, 8]  # 每秒对应的累计点数
-    L2_list = []
-    
-    for p_len in cum_points:
-        # 计算每条轨迹前 p_len 个点的欧氏距离
-        # preds[:, :p_len, :] - gts[:, :p_len, :] 形状 (N, p_len, 2)
-        # np.linalg.norm(..., axis=2) 得到每条轨迹每个点的距离，形状 (N, p_len)
-        dists = np.linalg.norm(preds[:, :p_len, :] - gts[:, :p_len, :], axis=2)
-        
-        # 累加所有轨迹所有点的距离
-        L2 = np.sum(dists)
-        L2_list.append(L2)
-    
-    return L2_list
+    preds = np.asarray(preds, dtype=np.float32)
+    gts   = np.asarray(gts,   dtype=np.float32)
+    if preds.shape != gts.shape or preds.ndim != 3 or preds.shape[2] != 2:
+        raise ValueError(f"输入形状应一致且为 (N, T, 2)，得到 {preds.shape} vs {gts.shape}")
+
+    N, T, _ = preds.shape
+    out = []
+    for k in secs:
+        p_len = min(k * hz, T)
+        diff = preds[:, :p_len, :] - gts[:, :p_len, :]      # (N, p_len, 2)
+        e2   = np.sum(diff**2, axis=2)                      # (N, p_len)
+        rss_per_traj = np.sqrt(np.sum(e2, axis=1))          # (N,)
+
+        if reduce == 'mean':
+            out.append(float(rss_per_traj.mean()))
+        elif reduce == 'sum':
+            out.append(float(rss_per_traj.sum()))
+        elif reduce == 'none':
+            out.append(rss_per_traj)                        # 返回 (N,)
+        else:
+            raise ValueError("reduce 必须是 'mean' | 'sum' | 'none'")
+    return out
 
 def compute_ADE(preds, gts):
     """
