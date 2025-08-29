@@ -8,3 +8,4 @@ def compute_L2_avg(preds, gts, secs=(1, 2, 3), hz=2):
     """
     l2_list = stp3_l2_persecond(preds, gts, secs=secs, hz=hz)
     return float(np.mean(l2_list))
+    
