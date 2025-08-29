@@ -2,97 +2,70 @@ import math
 import numpy as np
 from typing import List, Tuple
 import numpy as np
+import numpy as np
 
-def stp3_l2_persecond(preds, gts, secs=(1, 2, 3), hz=2, reduction='mean'):
+def stp3_l2_persecond(pred, gt, secs=(1, 2, 3), hz=2, reduction=None):
     """
-    ST-P3 风格的 L2@k秒：
-      对前 (k*hz) 个点的欧氏距离先在时间维取平均，再按样本做 reduce。
+    单条轨迹的 L2@k 指标（时间前缀平均）
     参数:
-      preds, gts: (N, T, 2)  预测/GT 轨迹（单位: 米）
-      secs: 统计的秒数
-      hz: 采样频率 (默认 2Hz -> 0.5s 一点)
-      reduction: 'mean' | 'sum' | 'none'
+      pred, gt: (T, 2)
+      secs:     统计到第 k 秒的时间前缀平均，如 (1,2,3)
+      hz:       采样频率 (默认 2Hz -> 0.5s 一点)
     返回:
       [L2@1s, L2@2s, L2@3s]（或按 secs 决定）
     """
-    preds = np.asarray(preds, dtype=np.float32)
-    gts   = np.asarray(gts,   dtype=np.float32)
-    if preds.shape != gts.shape or preds.ndim != 3 or preds.shape[-1] != 2:
-        raise ValueError(f"expect (N,T,2), got {preds.shape} and {gts.shape}")
+    pred = np.asarray(pred, dtype=np.float32)
+    gt   = np.asarray(gt,   dtype=np.float32)
 
-    # (N, T): 每步欧氏距离
-    d = np.linalg.norm(preds - gts, axis=2)
-    N, T = d.shape
+    if pred.shape != gt.shape:
+        raise ValueError(f"pred/gt 形状不一致: {pred.shape} vs {gt.shape}")
+    if pred.ndim != 2 or pred.shape[1] != 2:
+        raise ValueError(f"期望 (T,2)，实际 {pred.shape}")
+
+    # (T,): 每步欧氏距离
+    d = np.linalg.norm(pred - gt, axis=1)
+    T = d.shape[0]
+
     out = []
     for s in secs:
-        p = min(s * hz, T)
-        per_traj = d[:, :p].mean(axis=1)  # 先对时间平均
-        if reduction == 'mean':
-            out.append(float(per_traj.mean()))   # 再对样本平均
-        elif reduction == 'sum':
-            out.append(float(per_traj.sum()))
-        elif reduction == 'none':
-            out.append(per_traj)                 # 返回 (N,)
-        else:
-            raise ValueError("reduction must be 'mean'|'sum'|'none'")
+        # 用到的前缀步数 p：至少 1，最多 T
+        p = int(min(max(int(s * hz), 1), T))
+        out.append(float(d[:p].mean()))
     return out
-
-
 
 def compute_ADE(preds, gts):
     """
-    Compute Average Displacement Error (ADE) over all points and trajectories.
-    
-    ADE 是每个点欧氏距离的平均值。
-    
-    Args:
-        preds: list of predicted trajectories, shape (N, 8, 2)
-        gts: list of ground truth trajectories, shape (N, 8, 2)
-    
-    Returns:
-        float: ADE value
+    ADE: 所有点（以及所有样本）的欧氏距离平均
+    支持 (T,2) 或 (N,T,2)，返回标量
     """
-    preds = np.array(preds, dtype=np.float32)
-    gts = np.array(gts, dtype=np.float32)
-    
-    # 每个点的欧氏距离，shape (N, 8)
-    dists = np.linalg.norm(preds - gts, axis=2)
-    
-    # 对所有轨迹、所有点求平均
-    ade = np.mean(dists)
-    return ade
+    preds = np.asarray(preds, dtype=np.float32)
+    gts   = np.asarray(gts,   dtype=np.float32)
+    if preds.shape != gts.shape:
+        raise ValueError(f"shape 不一致: {preds.shape} vs {gts.shape}")
 
-def compute_L2_avg(preds, gts):
-    """
-    Compute the average of cumulative L2 distances per second.
-    
-    Args:
-        preds: list of predicted trajectories
-        gts: list of ground truth trajectories
-    
-    Returns:
-        float: average L2 over 4 seconds
-    """
-    L2 = compute_L2_persecond(preds, gts)  # 得到每秒 L2 列表
-    l2_avg = sum(L2) / 4                    # 平均值
-    return l2_avg
+    # 对最后一维(坐标维)求 L2；形状：(T,) 或 (N,T)
+    dists = np.linalg.norm(preds - gts, axis=-1)
+    # 全体平均 -> 标量
+    return float(dists.mean())
 
-def compute_ADE_L2pers_L2AVG(preds, gts):
+def compute_L2_avg(preds, gts, secs=(1, 2, 3), hz=2):
     """
-    Compute ADE, cumulative L2 per second, average L2, and average L2 for first 3 seconds.
-    
-    Args
-        preds: list of predicted trajectories
-        gts: list of ground truth trajectories
-    
-    Returns:
-        ade: overall average displacement error
-        l2_persecond: list of cumulative L2 distances per second [L2_1s, L2_2s, L2_3s, L2_4s]
-        l2_avg: average L2 over 4 seconds
-        l2_avg_3s: average L2 over first 3 seconds
+    L2@k（时间前缀平均）的均值，按 secs 的长度平均
+    仅支持单条轨迹 (T,2)
+    """
+    l2_list = stp3_l2_persecond(preds, gts, secs=secs, hz=hz)
+    return float(np.mean(l2_list))
+
+def compute_ADE_L2pers_L2AVG(preds, gts, secs=(1, 2, 3), hz=2):
+    """
+    返回：
+      ade:        标量 ADE（全体平均）
+      l2_persec:  按 secs 返回的 L2@k 列表
+      l2_avg:     l2_persec 的均值
     """
     ade = compute_ADE(preds, gts)
-    l2_persecond = compute_L2_persecond(preds, gts)
-    l2_avg = sum(l2_persecond) / 4
-    l2_avg_3s = sum(l2_persecond[:3]) / 3
-    return ade, l2_persecond, l2_avg, l2_avg_3s
+    l2_persec = stp3_l2_persecond(preds, gts, secs=secs, hz=hz)
+    l2_avg = float(np.mean(l2_persec))
+    return ade, l2_persec, l2_avg
+
+
