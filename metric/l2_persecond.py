@@ -1,7 +1,7 @@
 import numpy as np
 import math
 
-def stp3_l2_persecond(pred, gt, secs=(1, 2, 3), hz=2, reduction=None):
+def l2_persecond(pred, gt, secs=(1, 2, 3), hz=2, reduction=None):
     """
     单条轨迹的 L2@k 指标（时间前缀平均）
     参数:
